@@ -13,6 +13,12 @@ Date: 02 July 2024
 - number (this is present in some labels after ' Lon. Cat. Ed. 8, No.')
 - kentNumber (this is on the bottom right corner and looks like : 107.19.5)
 
+        self._save_chunk(start_i, end_i)
+  File "/home/tim/.local/lib/python3.10/site-packages/pandas/io/formats/csvs.py", line 324, in _save_chunk
+    libwriters.write_csv_rows(
+  File "writers.pyx", line 73, in pandas._libs.writers.write_csv_rows
+    _csv.Error: need to escape, but no escapechar set
+
 """
 import openai
 from openai import OpenAI
@@ -77,8 +83,8 @@ for index, row in df_input_csv.iterrows():
         this_row  = df_input_csv.loc[index].copy() 
         to_transcribe_list.append(this_row)
 
-df_to_transcribe = pd.DataFrame(to_transcribe_list).fillna('none')
-df_to_transcribe["ERROR"] = "none"
+df_to_transcribe = pd.DataFrame(to_transcribe_list).fillna("")
+df_to_transcribe["ERROR"] = "OK"
 df_to_transcribe["ocr_text"] = "No OCR text"
 
 # Necessary because by copying rows to give each url a seperate row, we have also copied indexes
@@ -88,16 +94,25 @@ df_to_transcribe.reset_index(drop=True, inplace=True)
 # These are the columns that ChatGPT will try to fill from the OCR
 ocr_column_names = [ 
         ("genus","genus"), 
-        ("species","species"), 
+        ("species","species"),
+        ("collector","collector"),
+        ("year_yyyy","year_yyyy"),	
+        ("month_mm","month_mm"),	
+        ("day_dd","day_dd"),
         ("locality","locality"), 
+        ("lat_DMS","lat_DMS"), 
+        ("lng_DMS","lng_DMS"), 
+        ("lat_decimal","lat_decimal"), 
+        ("lng_decimal","lng_decimal"), 
+        ("location_accuracy_meters","location_accuracy_meters"), 
+        ("altitude","altitude"), 
+        ("altitude_units","altitude_units"), 
         ("habitat","habitat"), 
-        ("collector","collector"), 
-        ("date","date"), 
-        ("number","cat_number"), 
+        ("cat_number","cat_number"), 
         ("kentNumber","kentNumber"),
+        ("error","error"),
         ("ocr_text","ocr_text")
  ]
-
 
 df_column_names = []          # To make the DataFrame with
 prompt_key_names = []         # To use in the prompt for ChatGPT
@@ -105,7 +120,7 @@ empty_output_dict = dict([])  # Useful when you have an error but still need to 
 for df_name, prompt_name in ocr_column_names:
     df_column_names.append(df_name)     
     prompt_key_names.append(prompt_name)   
-    empty_output_dict[df_name] = "none"
+    empty_output_dict[df_name] = ""
 
 keys_concatenated = ", ".join(prompt_key_names) # For the prompt
 
@@ -122,12 +137,27 @@ else:
 """
     - genus
     - species
-    - locality
+    
     - habitat
     - collector
     - date
     - number (this is present in some labels after ' Lon. Cat. Ed. 8, No.')
     - kentNumber (this is on the bottom right corner and looks like : 107.19.5)
+    
+    - locality - unless otherwise stated, assume Guernsey
+    - lat DMS
+    - lng DMS
+    - lat Dec
+    - lng Dec
+    - location accuracy (meters)
+    
+    - altitude 
+    - altitude_units
+    - year  YYYY
+    - month MM
+    - day   DD
+    
+    
 """
 
 # Guernsey
@@ -142,8 +172,9 @@ prompt = (
     f"habitat field information often appears after printed words like 'HABITAT' or 'Habitat', examples of habitat are 'waste ground', 'high hedged bank', 'cliff top', shady bank by stream', 'field by a road'."
     
     f"collector field information often appears after printed words like 'COLLECTOR', 'Collector', 'Coll.' or 'Det.'."
+    f"If you see "
     
-    f"date field information often appears after printed words like 'DATE' or 'Date'. Return the data in YYYY-MM-DD format."
+    f"Date information often appears after printed words like 'DATE' or 'Date'. Return the data in YYYY-MM-DD format."
     
     f"If you see a number preceded by a string like 'Lon. Cat. Ed. 8, No.' return the number as the cat_number."
     
@@ -152,15 +183,15 @@ prompt = (
     f"Examples of kentNumbers are '5.', '4.5', '4.6', '4.9', '4/10', '13.', '14.', '15.1', '15.2', '15-5', '15.7', '25.1' '46.3', '46.12', '66.6b', '79.6', '86/1', '97-1', '75.35.7', etc."
     f"Include the '.', '-' or '/' between the integers in the kentNumber you return."
     
-    f"If you can not find a value for a key return value 'none'"
+    f"If you can not find a value for a key return value ''"
 )
 
 headers = get_headers(my_api_key)
 
 source_type = "url" # "url" or "local"
-batch_size = 20 # saves every
+batch_size = 1 # saves every
 print("####################################### START OUTPUT ######################################")
-for index, row in df_to_transcribe.iloc[3000:3050].iterrows():  
+for index, row in df_to_transcribe.iloc[0:].iterrows():  
 
     count = index + 1
     
