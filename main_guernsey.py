@@ -11,7 +11,6 @@ Date: 02 July 2024
 - collector
 - date
 - number (this is present in some labels after ' Lon. Cat. Ed. 8, No.')
-
 - kentNumber (this is on the bottom right corner and looks like : 107.19.5)
 
 """
@@ -94,7 +93,7 @@ ocr_column_names = [
         ("habitat","habitat"), 
         ("collector","collector"), 
         ("date","date"), 
-        ("number","number"), 
+        ("number","cat_number"), 
         ("kentNumber","kentNumber"),
         ("ocr_text","ocr_text")
  ]
@@ -120,44 +119,16 @@ else:
     print("ERROR: df_column_names is NOT a subset of df_to_transcribe_keys - BAD")
     exit()
 
-
-# NY_Herbarium
-prompt = (
-    f"Read this herbarium sheet and extract all the text you can"
-    f"The herbarium sheet may sometimes use Spanish, French or German"
-    f"Go through the text you have extracted and return data in JSON format with {keys_concatenated} as keys"
-    f"Use exactly {keys_concatenated} as keys"
-    
-    f"Use the English spelling for Country e.g. 'Brazil' not 'Brasil'"
-    
-    f"Return the text you have extracted in the field 'OCR Text'"
-    
-    f"'Collection Team' should contain other people involved in collecting the specimen"
-    
-    f"The 'Collection Date To' and 'Collection Date From' should have the format YYYY-MM-DD"
-    f"If there is only one date then fill in 'Collection Date To' and 'Collection Date From' with the same value"
-    
-    f"Infer the Continent field from the Country e.g. If the Country is 'Belize' then the Continent field is 'Central America', if the Country is 'Costa Rica' the the Continent field is 'South America'"
-    f"If no Country is mentioned then infer it from the Continent, Province, County and Locality Description"
-    
-    f"If Latitude and Longitude are not mentioned in the text then infer them from the Country, Province, County and Locality Description"
-    f"Put the infered Latitude and Longitude in the 'Latitude (Degrees Minutes Seconds)' 'Longitude (Degrees Minutes Seconds)' 'Latitude Decimal' and 'Longitude Decimal' fields"
-    f"If Latitude and Longitude have been inferred fill in the 'Coordinate Uncertainty In Meters' with an estimate of the accuracy and 'Geo Reference Method' with 'Estimated from locality description'"
-    
-    f"If a single elevation or altitude is mentioned fill in both the 'Minimum Elevation (Meters)' and 'Maximum Elevation (Meters)' with the same value"
-    f"If there is elevation information in Meters then do a conversion to feet and store the conversion in 'Minimum Elevation (Feet)' and 'Maximum Elevation (Feet)'"
-    
-    f"For 'Plant Frequency' field look for words like abundant, cccasional, common, frequent or rare"
-    f"For 'Plant Habitat' field put what type of environment the plant grows in e.g. forest, scrub, rocky hillside"
-    f"For 'Plant Substrate' field look for what the plant grows on e.g. on rotting log, on damp rock, on bark"
-    f"For 'Plant Description' field put a description of the plant e.g. Shrub 4m high, flowers white, fruit orange"
-    
-    f"If a plant is cultivated put 'Yes' in the 'Cultivated' field, otherwise put 'No'"
-    
-    f"If you find 'INB' followed by a number add INB and the number to SpeOtherSpecimenNumbers_tab"
-    
-    f"If you can not find a value for a key return value 'none'"
-)
+"""
+    - genus
+    - species
+    - locality
+    - habitat
+    - collector
+    - date
+    - number (this is present in some labels after ' Lon. Cat. Ed. 8, No.')
+    - kentNumber (this is on the bottom right corner and looks like : 107.19.5)
+"""
 
 # Guernsey
 prompt = (
@@ -166,9 +137,15 @@ prompt = (
     f"Use exactly {keys_concatenated} as keys."
     f"Return the text you have extracted in the field 'ocr_text'."
     
+    f"locality field information often appears after printed words like 'LOCALITY' or 'Locality'."
     
-    f"The values for the 'number' field must always be preceded by a string like 'Lon. Cat. Ed. 8, No.'"
+    f"habitat field information often appears after printed words like 'HABITAT' or 'Habitat', examples of habitat are 'waste ground', 'high hedged bank', 'cliff top', shady bank by stream', 'field by a road'."
     
+    f"collector field information often appears after printed words like 'COLLECTOR', 'Collector', 'Coll.' or 'Det.'."
+    
+    f"date field information often appears after printed words like 'DATE' or 'Date'. Return the data in YYYY-MM-DD format."
+    
+    f"If you see a number preceded by a string like 'Lon. Cat. Ed. 8, No.' return the number as the cat_number."
     
     f"Look very carefully at the botton right of the image for the kentNumber. The kentNumber is very, very faint."
     f"Spend some time looking for the faint kentNumber in the bottom right."
@@ -183,7 +160,7 @@ headers = get_headers(my_api_key)
 source_type = "url" # "url" or "local"
 batch_size = 20 # saves every
 print("####################################### START OUTPUT ######################################")
-for index, row in df_to_transcribe.iloc[0:].iterrows():  
+for index, row in df_to_transcribe.iloc[3000:3050].iterrows():  
 
     count = index + 1
     
