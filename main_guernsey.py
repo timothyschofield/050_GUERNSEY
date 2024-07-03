@@ -19,6 +19,31 @@ Date: 02 July 2024
   File "writers.pyx", line 73, in pandas._libs.writers.write_csv_rows
     _csv.Error: need to escape, but no escapechar set
 
+# OLD Guernsey prompt
+prompt = (
+    f"Read this herbarium sheet and extract all the text you can."
+    f"Go through the text you have extracted and return data in JSON format with {keys_concatenated} as keys."
+    f"Use exactly {keys_concatenated} as keys."
+    f"Return the text you have extracted in the field 'ocr_text'."
+    
+    f"locality field information often appears after printed words like 'LOCALITY' or 'Locality'."
+    
+    f"habitat field information often appears after printed words like 'HABITAT' or 'Habitat', examples of habitat are 'waste ground', 'high hedged bank', 'cliff top', shady bank by stream', 'field by a road'."
+    
+    f"collector field information often appears after printed words like 'COLLECTOR', 'Collector', 'Coll.' or 'Det.'."
+    
+    f"date field information often appears after printed words like 'DATE' or 'Date'. Return the data in YYYY-MM-DD format."
+    
+    f"If you see a number preceded by a string like 'Lon. Cat. Ed. 8, No.' return the number as the cat_number."
+    
+    f"Look very carefully at the botton right of the image for the kentNumber. The kentNumber is very, very faint."
+    f"Spend some time looking for the faint kentNumber in the bottom right."
+    f"Examples of kentNumbers are '5.', '4.5', '4.6', '4.9', '4/10', '13.', '14.', '15.1', '15.2', '15-5', '15.7', '25.1' '46.3', '46.12', '66.6b', '79.6', '86/1', '97-1', '75.35.7', etc."
+    f"Include the '.', '-' or '/' between the integers in the kentNumber you return."
+    
+    f"If you can not find a value for a key return value 'none'"
+)
+
 """
 import openai
 from openai import OpenAI
@@ -96,9 +121,9 @@ ocr_column_names = [
         ("genus","genus"), 
         ("species","species"),
         ("collector","collector"),
-        ("year_yyyy","year_yyyy"),	
-        ("month_mm","month_mm"),	
-        ("day_dd","day_dd"),
+        ("year_YYYY","year_YYYY"),	
+        ("month_MM","month_MM"),	
+        ("day_DD","day_DD"),
         ("locality","locality"), 
         ("lat_DMS","lat_DMS"), 
         ("lng_DMS","lng_DMS"), 
@@ -141,7 +166,7 @@ else:
     - habitat
     - collector
     - date
-    - number (this is present in some labels after ' Lon. Cat. Ed. 8, No.')
+    - cat_number (this is present in some labels after ' Lon. Cat. Ed. 8, No.')
     - kentNumber (this is on the bottom right corner and looks like : 107.19.5)
     
     - locality - unless otherwise stated, assume Guernsey
@@ -165,16 +190,8 @@ prompt = (
     f"Read this herbarium sheet and extract all the text you can."
     f"Go through the text you have extracted and return data in JSON format with {keys_concatenated} as keys."
     f"Use exactly {keys_concatenated} as keys."
-    f"Return the text you have extracted in the field 'ocr_text'."
     
-    f"locality field information often appears after printed words like 'LOCALITY' or 'Locality'."
-    
-    f"habitat field information often appears after printed words like 'HABITAT' or 'Habitat', examples of habitat are 'waste ground', 'high hedged bank', 'cliff top', shady bank by stream', 'field by a road'."
-    
-    f"collector field information often appears after printed words like 'COLLECTOR', 'Collector', 'Coll.' or 'Det.'."
-    f"If you see "
-    
-    f"Date information often appears after printed words like 'DATE' or 'Date'. Return the data in YYYY-MM-DD format."
+    f"Return the text you have extracted in the field ocr_text."
     
     f"If you see a number preceded by a string like 'Lon. Cat. Ed. 8, No.' return the number as the cat_number."
     
@@ -183,15 +200,35 @@ prompt = (
     f"Examples of kentNumbers are '5.', '4.5', '4.6', '4.9', '4/10', '13.', '14.', '15.1', '15.2', '15-5', '15.7', '25.1' '46.3', '46.12', '66.6b', '79.6', '86/1', '97-1', '75.35.7', etc."
     f"Include the '.', '-' or '/' between the integers in the kentNumber you return."
     
+    f"locality field information often appears after printed words like 'LOCALITY' or 'Locality'."
+    
+    f"Unless otherwise stated, assume the locality is somewhere in the Channel Islands in the English Channel."
+    f"If the island name is not mentioned try to find it from the locality infomation. Add the island name to the locality information."
+    
+    f"If you have found a locality description, find out the latitude and longitude of the location."
+    f"Return the latitude and longitude in degrees, minutes and seconds in the lat_DMS and lng_DMS fields respectivly."
+    f"Return the decimal latitude and longitude in lat_decimal and lng_decimal fields respectivly."
+    f"Estimate how accurate the latitude and longitude information is in meters and return it in the location_accuracy_meters field."
+    
+    f"Date field information often appears after printed words like 'DATE' or 'Date'. Return the year in year_YYYY, the month in month_MM and day in day_DD."
+    f"year must be 4 digits and month and day two digits, packing single digit values with a leading zero."
+    
+    f"If the altitude the specimen was collected at is mentioned return it in the altitude field. Return the unit of altitude measurement in the altitude_units field, e.g. meters or feet."
+
+    f"habitat field information often appears after printed words like 'HABITAT' or 'Habitat', examples of habitat are 'waste ground', 'high hedged bank', 'cliff top', shady bank by stream', 'field by a road'."
+    
+    f"collector field information often appears after printed words like 'COLLECTOR', 'Collector', 'Coll.' or 'Det.'."
+    f"If the genitive case is used, e.g. Gosselin's Specimens, the collector is Gosselin."
+    
     f"If you can not find a value for a key return value ''"
 )
 
 headers = get_headers(my_api_key)
 
 source_type = "url" # "url" or "local"
-batch_size = 1 # saves every
+batch_size = 20 # saves every
 print("####################################### START OUTPUT ######################################")
-for index, row in df_to_transcribe.iloc[0:].iterrows():  
+for index, row in df_to_transcribe.iloc[1000:1020].iterrows():  
 
     count = index + 1
     
