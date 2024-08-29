@@ -1,15 +1,20 @@
 """
-    File : main_guernsey.py
+    File : main_structured_guernsey.py
 
     Author: Tim Schofield
-    Date: 02 July 2024
+    Date: 28 August 2024
 
+    Regular gpt-4o iteration
     $0.93
     index: 99 710 seconds
     num_not_200_errors=1
     num_invalid_JSON_errors=2
     num_invalid_keys_errors=0
-
+    ----------------------------------
+    Structured data iteration
+    $0.47
+    no errors
+    index: 99 677 seconds
 """
 import openai
 from openai import OpenAI
@@ -20,15 +25,17 @@ import requests
 import os
 from pathlib import Path 
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import time
 from datetime import datetime
 import json
 import sys
-print(f"Python version {sys.version}")
 
-MODEL = "gpt-4o" # Context window of 128k max_tokens 4096
+print(f"Python version {sys.version}")
+print(f"openai version {openai.VERSION}")
+print("----------------------")
+
+MODEL = "gpt-4o-2024-08-06" # For structured data
 
 load_dotenv()
 try:
@@ -38,7 +45,6 @@ except Exception as ex:
     print("Exception:", ex)
     exit()
 
-
 input_folder = "guernsey_input"
 input_file = "Guernsey url - Sheet1.csv"
 input_path = Path(f"{input_folder}/{input_file}")
@@ -47,8 +53,7 @@ input_jpg_folder = "jpg_folder_input"
 
 output_folder = "guernsey_output"
 
-project_name = "guernsey_test_"
-
+project_name = "guernsey_structured"
 
 time_stamp = get_file_timestamp()
 
@@ -73,17 +78,15 @@ for index, row in df_input_csv.iterrows():
     else:
         this_row  = df_input_csv.loc[index].copy() 
         to_transcribe_list.append(this_row)
-
+        
 df_to_transcribe = pd.DataFrame(to_transcribe_list).fillna("")
-
-# Columns that were not in the input CSV
 df_to_transcribe["ERROR"] = "OK"
 df_to_transcribe["ocr_text"] = "No OCR text"
 
 # Necessary because by copying rows to give each url a seperate row, we have also copied indexes
 # We want each row to have its own index - so reset_index
-df_to_transcribe.reset_index(drop=True, inplace=True)
-
+df_to_transcribe.reset_index(drop=True, inplace=True)        
+        
 # These are the columns that ChatGPT will try to fill from the OCR
 ocr_column_names = [ 
         ("genus","genus"), 
@@ -115,25 +118,41 @@ for df_name, prompt_name in ocr_column_names:
     prompt_key_names.append(prompt_name)   
     empty_output_dict[df_name] = ""
 
-keys_concatenated = ", ".join(prompt_key_names) # For the prompt
+keys_concatenated = ", ".join(prompt_key_names) # For the prompt        
 
-
-# Should check that the columns in df_column_names are in df_to_transcribe
-# If they are not, no error occures, but the OCR output will be not copied into the missing columns
-# This is silent and bad
+# The columns that GPT will extract and return 
+# have to be a subset of the columns in the CSV
 df_to_transcribe_keys = list(df_to_transcribe.keys())
 if set(df_column_names) <= set(df_to_transcribe_keys):
-    print("df_column_names is a subset of df_to_transcribe_keys - GOOD")
+    print("GOOD: df_column_names is a subset of df_to_transcribe_keys")
 else:
-    print("ERROR: df_column_names is NOT a subset of df_to_transcribe_keys - BAD")
+    print("ERROR: df_column_names is NOT a subset of df_to_transcribe_keys")
     exit()
 
+from pydantic import BaseModel
+class GuernseyJSON(BaseModel):
+    genus: str
+    species: str
+    collector: str
+    year_YYYY: str
+    month_MM: str
+    day_DD: str
+    locality: str
+    lat_DMS: str
+    lng_DMS: str
+    lat_decimal: str
+    lng_decimal: str
+    location_accuracy_meters: str
+    altitude: str
+    altitude_units: str
+    habitat: str
+    cat_number: str
+    kentNumber: str
+    error: str
+    ocr_text: str
 
-# Guernsey
 prompt = (
     f"Read this herbarium sheet and extract all the text you can."
-    f"Go through the text you have extracted and return data in JSON format with {keys_concatenated} as keys."
-    f"Use exactly {keys_concatenated} as keys."
     
     f"Return the text you have extracted in the field ocr_text."
     
@@ -168,128 +187,44 @@ prompt = (
     f"If you can not find a value for a key return value ''"
 )
 
+
 headers = get_headers(my_api_key)
 
-source_type = "url" # "url" or "local"
 batch_size = 20 # saves every
-num_not_200_errors = 0
-num_invalid_JSON_errors = 0
-num_invalid_keys_errors = 0
 start_time = int(time.time())
 print("####################################### START OUTPUT ######################################")
-for index, row in df_to_transcribe.iloc[0:100].iterrows():
- 
+for index, row in df_to_transcribe.iloc[0:5].iterrows():
+
     image_path = row["url"]
-    
-    if source_type != "url":
-        # JPGs in local folder
-        filename = image_path.split("/")[-1]
-        image_path = Path(f"{input_jpg_folder}/{filename}")
-        if image_path.is_file() == False:
-            print(f"File {image_path} does not exist")
-            exit()
-            
+
     print(f"\n########################## OCR OUTPUT {image_path} ##########################")
     end_time = int(time.time())
     print(f"index: {index} {end_time - start_time} seconds")
-    
-    payload = make_payload(model=MODEL, prompt=prompt, source_type=source_type, image_path=image_path, num_tokens=4096)
 
-    num_tries = 3
-    for i in range(num_tries):
-        ocr_output = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-        
-        response_code = ocr_output.status_code
-        if response_code != 200:
-            # NOT 200
-            num_not_200_errors = num_not_200_errors + 1
-            print(f"======= 200 not returned {response_code}. Trying request again number: {i} ===========================")
-            time.sleep(0.5)
-        else:
-            # YES 200
-            json_returned = clean_up_ocr_output_json_content(ocr_output)
-            json_valid = is_json(json_returned)
-            if json_valid == False:
-                # INVALID JSON
-                num_invalid_JSON_errors = num_invalid_JSON_errors + 1
-                print(f"======= Returned JSON content not valid. Trying request again number: {i} ===========================")
-                print(f"INVALID JSON content****{json_returned}****")
-            else:
-                # VALID JSON
-                # Have to check that the returned JSON keys are correct 
-                # Sometimes ChatGPT just doesn't do as its told and changes the key names!
-                if are_keys_valid(json_returned, prompt_key_names) == False:
-                    # INVALID KEYS
-                    num_invalid_keys_errors = num_invalid_keys_errors + 1
-                    print(f"======= Returned JSON contains invalid keys. Trying request again number: {i} ===========================")
-                else:
-                    # VALID KEYS
-                    break
-                
-    ###### eo try requests three times
-
-    # OK - we've tried three time to get
-    # 1. 200 returned AND
-    # 2. valid JSON returned AND
-    # 3. valid key names
-    # Now we have to create a valid Dict line for the spreadsheet
-    error_message = "OK"
-    dict_returned = dict()
-    if response_code != 200:
-        # NOT 200
-        # Make a Dict line from the standard empty Dict and 
-        # put the whole of the returned message in the OcrText field
-        print("RAW ocr_output ****", ocr_output.json(),"****")                   
-        dict_returned = eval(str(empty_output_dict))
-        dict_returned['ocr_text'] = str(ocr_output.json())
-        error_message = "200 NOT RETURNED FROM GPT"
-        print(error_message)
-    else:
-        # YES 200
-        print(f"content****{json_returned}****")
-    
-        if is_json(json_returned):
-            # VALID JSON
+    try:
+        completion = client.beta.chat.completions.parse(
+            model="gpt-4o-2024-08-06",
             
-            # Have to deal with the possibility of invalid keys returned in the valid JSON
-            if are_keys_valid(json_returned, prompt_key_names):
-                # VALID KEYS
-                # Now change all the key names from the human readable used in the prompt to 
-                # DataFrame output names to match the NY spreadsheet
-                
-                dict_returned = eval(json_returned) # JSON -> Dict
-                
-                # Chenge the prompt names for CSV keys
-                for df_name, prompt_name in ocr_column_names:
-                    dict_returned[df_name] = dict_returned.pop(prompt_name)
-            else:
-                # INVALID KEYS
-                dict_returned = eval(str(empty_output_dict))
-                dict_returned['ocr_text'] = str(json_returned)                  
-                error_message = "INVALID JSON KEYS RETURNED FROM GPT"
-                print(error_message)
-        else:
-            # INVALID JSON
-            # Make a Dict line from the standard empty Dict and 
-            # just put the invalid JSON in the OcrText field
-            dict_returned = eval(str(empty_output_dict))
-            dict_returned['ocr_text'] = str(json_returned)
-            error_message = "JSON NOT RETURNED FROM GPT"
-            print(error_message)
-        
-   
-    ###### EO dealing with various types of returned code ######
-    
-    dict_returned["ERROR"] = str(error_message)  # Insert error message into output
-    
-    df_to_transcribe.loc[index, dict_returned.keys()] = dict_returned.values() # <<<<<<<<<<<<<<<<< 
-    
+            messages=[{"role": "user", "content": [{"type": "text", "temperature": "0.0", "text": prompt},{"type": "image_url", "image_url": {"url": image_path}}]}],
+
+            response_format=GuernseyJSON,
+        )
+
+    except Exception as ex:
+        # e.g. Error code: 400 - {'error': {'message': 'Invalid image.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_image'}}
+        print("Exception:", ex)
+        exit()
+
+    event = completion.choices[0].message.parsed
+    dict_returned = event.__dict__
+
+    # Writing the values back into the df_to_transcribe df
+    df_to_transcribe.loc[index, dict_returned.keys()] = dict_returned.values()
+
     if index % batch_size == 0 and index != 0:
         print(f"WRITING BATCH:{index}")
         output_path = f"{output_folder}/{project_name}_{time_stamp}-{index:04}"
         save_dataframe_to_csv(df_to_save=df_to_transcribe, output_path=output_path)
-
-#################################### eo for loop ####################################
 
 # For safe measure and during testing where batches are not %batch_size
 print(f"WRITING BATCH:{index}")
@@ -297,13 +232,6 @@ output_path = f"{output_folder}/{project_name}_{time_stamp}-{index:04}"
 save_dataframe_to_csv(df_to_save=df_to_transcribe, output_path=output_path)
 
 print(f"index: {index} {end_time - start_time} seconds")
-print(f"{num_not_200_errors=}")
-print(f"{num_invalid_JSON_errors=}")
-print(f"{num_invalid_keys_errors=}")
 
-print("####################################### END OUTPUT ######################################")
-  
-
-  
 
 

@@ -25,6 +25,7 @@ def are_keys_valid(json_returned, prompt_key_names):
 # Must be called after you know 200 has been returned
 def clean_up_ocr_output_json_content(ocr_output_in):
   
+    # json() returns a JSON object of the result
     json_returned = ocr_output_in.json()['choices'][0]['message']['content']
 
     # HERE I DEAL WITH SOME FORMATS THAT CREATE INVALID JSON
